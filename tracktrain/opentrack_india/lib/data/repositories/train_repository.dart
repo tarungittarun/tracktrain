@@ -51,7 +51,10 @@ class TrainRepository {
     }
 
     final ranked = candidates.values.toList()
-      ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
+      ..sort((a, b) {
+        final cmp = _score(q, b).compareTo(_score(q, a));
+        return cmp != 0 ? cmp : a.name.length.compareTo(b.name.length);
+      });
     return ranked.take(limit).toList(growable: false);
   }
 

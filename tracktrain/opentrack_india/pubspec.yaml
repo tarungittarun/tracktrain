@@ -5,7 +5,7 @@ description: >-
   destination alarms, and a 100% on-device usage dashboard. Zero paid API
   keys, zero telemetry.
 publish_to: "none"
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
@@ -51,4 +51,4 @@ flutter:
   generate: true
   uses-material-design: true
   assets:
-    - assets/data/
+    - assets/db/

@@ -1,9 +1,0 @@
-number,name,src,dst,days,type
-12951,Mumbai Rajdhani,MMCT,NDLS,1111111,Rajdhani
-12952,New Delhi Rajdhani,NDLS,MMCT,1111111,Rajdhani
-12621,Tamil Nadu Express,MAS,NDLS,1111111,Superfast
-12622,Tamil Nadu Express,NDLS,MAS,1111111,Superfast
-12001,Bhopal Shatabdi,NDLS,BPL,1111110,Shatabdi
-12002,New Delhi Shatabdi,BPL,NDLS,1111110,Shatabdi
-22691,Bengaluru Rajdhani,SBC,NZM,1111111,Rajdhani
-22692,Nizamuddin Rajdhani,NZM,SBC,1111111,Rajdhani

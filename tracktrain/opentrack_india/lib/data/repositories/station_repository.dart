@@ -44,7 +44,12 @@ class StationRepository {
     }
 
     final ranked = candidates.values.toList()
-      ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
+      ..sort((a, b) {
+        final cmp = _score(q, b).compareTo(_score(q, a));
+        // Tie-break: shorter (more specific) names first, so "howra" ranks
+        // HOWRAH JN above HOWRAH GOODS.
+        return cmp != 0 ? cmp : a.name.length.compareTo(b.name.length);
+      });
     return ranked.take(limit).toList(growable: false);
   }
 

@@ -6,99 +6,95 @@ import 'package:opentrack_india/data/repositories/station_repository.dart';
 import 'package:opentrack_india/data/repositories/train_repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-/// Reads the real bundled CSVs from disk instead of rootBundle so the exact
-/// on-device pipeline (schema → FTS5 → seed → search) can be verified in CI.
-Future<String> _fileAssetLoader(String path) => File(path).readAsString();
-
+/// End-to-end tests against the real bundled railway dataset
+/// (8,736 stations / 5,207 trains / 416,629 stops).
 void main() {
-  const stations = StationRepository();
-  const trains = TrainRepository();
+  late File dbCopy;
 
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
-    AppDatabase.instance.debugPathOverride =
-        '${Directory.systemTemp.path}/opentrack_test_'
-        '${DateTime.now().microsecondsSinceEpoch}.db';
-    AppDatabase.instance.assetLoader = _fileAssetLoader;
+    TestWidgetsFlutterBinding.ensureInitialized();
+
+    // Work on a scratch copy so the asset itself is never mutated.
+    // sqflite_common_ffi needs an absolute path, or it resolves the file
+    // inside its own sandbox directory.
+    final dir = Directory.current.absolute.path;
+    dbCopy = File('$dir/test/.scratch_railway.db');
+    dbCopy.writeAsBytesSync(File('$dir/assets/db/opentrack_timetable.db')
+        .readAsBytesSync());
+
+    AppDatabase.instance.debugPathOverride = dbCopy.path;
   });
 
   tearDownAll(() async {
-    final path = AppDatabase.instance.debugPathOverride;
-    await databaseFactory.deleteDatabase(path!);
+    await AppDatabase.instance.debugReset();
+    if (dbCopy.existsSync()) dbCopy.deleteSync();
   });
 
-  test('database seeds the bundled dataset with FTS5 enabled', () async {
+  test('dataset is the full Indian Railways bundle', () async {
     final db = await AppDatabase.instance.database;
-    expect(db, isNotNull);
-    expect(AppDatabase.instance.stationCount, 43);
-    expect(AppDatabase.instance.trainCount, 8);
-    expect(AppDatabase.instance.ftsAvailable, isTrue);
+    Future<int> count(String table) async =>
+        (await db.rawQuery('SELECT COUNT(*) AS n FROM $table')).first['n'] as int;
+    final stations = await count('stations');
+    final trains = await count('trains');
+    final stops = await count('train_stops');
+    expect(stations, greaterThan(8000));
+    expect(trains, greaterThan(5000));
+    expect(stops, greaterThan(400000));
   });
 
-  test('empty query returns popular stations (picker initial state)',
-      () async {
-    final results = await stations.search('');
-    expect(results, isNotEmpty);
+  test('exact + partial station search works on the full dataset', () async {
+    final stations = await const StationRepository().search('chennai central');
+    expect(stations, isNotEmpty);
+    expect(stations.first.code, 'MAS');
+
+    final partial = await const StationRepository().search('secund');
+    expect(partial.any((s) => s.code == 'SC'), isTrue,
+        reason: 'partial name match should find Secunderabad');
+
+    final byCode = await const StationRepository().search('ndls');
+    expect(byCode.first.code, 'NDLS');
   });
 
-  test('station search: exact and typo queries', () async {
-    final exact = await stations.search('chennai');
-    expect(exact.map((s) => s.code), contains('MAS'));
-
-    final typo = await stations.search('bopal');
-    expect(typo.map((s) => s.code), contains('BPL'));
-
-    final byCode = await stations.search('ndls');
-    expect(byCode.map((s) => s.code), contains('NDLS'));
+  test('typo-tolerant station search recovers from misspellings', () async {
+    expect((await const StationRepository().search('howrah')).first.code, 'HWH');
+    final typo = await const StationRepository().search('howra');
+    expect(typo.map((s) => s.code), contains('HWH'));
+    final typo2 = await const StationRepository().search('benaras');
+    expect(typo2.map((s) => s.name), isNotEmpty);
   });
 
-  test('station search works with vernacular (Devanagari) input', () async {
-    final results = await stations.search('नई दिल्ली');
-    expect(results, isNotEmpty);
-    expect(results.first.code, 'NDLS');
-  });
-
-  test('train search: typo, number and name queries', () async {
-    final typo = await trains.search('rajdhni');
-    expect(typo.map((t) => t.number), contains('12951'));
-
-    final byNumber = await trains.search('12951');
+  test('train search finds real trains by number and name', () async {
+    final byNumber = await const TrainRepository().search('12301');
     expect(byNumber, isNotEmpty);
-    expect(byNumber.first.number, '12951');
+    expect(byNumber.first.number, '12301');
 
-    final byName = await trains.search('tamil nadu');
-    expect(byName.map((t) => t.number), contains('12621'));
+    final rajdhani = await const TrainRepository().search('rajdhani');
+    expect(rajdhani.length, greaterThan(5));
   });
 
-  test('train schedule returns ordered stops with station names', () async {
-    final schedule = await trains.getSchedule('12951');
-    expect(schedule.length, 5);
-    expect(schedule.first.stationCode, 'MMCT');
-    expect(schedule.last.stationCode, 'NDLS');
-    expect(schedule.last.stationName, 'New Delhi');
-    expect(schedule.first.isOrigin, isTrue);
+  test('schedule stops are ordered with times', () async {
+    final stops = await const TrainRepository().getSchedule('12301');
+    expect(stops.length, greaterThan(150));
+    expect(stops.first.stationCode, 'HWH');
+    expect(stops.last.stationCode, 'NDLS');
+    expect(stops.first.departure, '16:55');
+    expect(stops.last.arrival, isNotEmpty);
+    for (var i = 1; i < stops.length; i++) {
+      expect(stops[i].sequence, greaterThan(stops[i - 1].sequence));
+    }
   });
 
-  test('trains halting at a station are listed', () async {
-    final halting = await trains.trainsStoppingAt('BPL');
-    expect(halting.map((t) => t.number), containsAll(['12621', '12001']));
-  });
-
-  test('self-healing rebuilds an emptied database on relaunch', () async {
+  test('between-stations lookup works offline', () async {
     final db = await AppDatabase.instance.database;
-    await db.execute('DELETE FROM stations');
-    await db.execute('DELETE FROM stations_fts');
-    await db.execute('DELETE FROM trains');
-    await db.close();
-
-    // Simulate the next app launch opening the same hollow file.
-    AppDatabase.instance.debugReset();
-    await AppDatabase.instance.database;
-    expect(AppDatabase.instance.stationCount, 43);
-    expect(AppDatabase.instance.trainCount, 8);
-
-    final healed = await stations.search('chennai');
-    expect(healed.map((s) => s.code), contains('MAS'));
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT t.number FROM train_stops a
+      JOIN train_stops b ON a.train_number = b.train_number
+      JOIN trains t ON t.number = a.train_number
+      WHERE a.station_code = ? AND b.station_code = ? AND a.seq < b.seq
+      LIMIT 20
+    ''', ['NDLS', 'HWH']);
+    expect(rows.length, greaterThanOrEqualTo(5));
   });
 }

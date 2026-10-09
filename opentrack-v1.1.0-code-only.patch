@@ -1,0 +1,802 @@
+diff --git a/tracktrain/opentrack_india/.gitignore b/tracktrain/opentrack_india/.gitignore
+new file mode 100644
+index 0000000..e38b879
+--- /dev/null
++++ b/tracktrain/opentrack_india/.gitignore
+@@ -0,0 +1,51 @@
++# Miscellaneous
++*.class
++*.log
++*.pyc
++*.swp
++.DS_Store
++.atom/
++.build/
++.buildlog/
++.history
++.svn/
++.swiftpm/
++migrate_working_dir/
++
++# IntelliJ related
++*.iml
++*.ipr
++*.iws
++.idea/
++
++# VS Code
++.vscode/
++
++# Flutter/Dart/Pub related
++**/doc/api/
++**/ios/Flutter/.last_build_id
++.dart_tool/
++.flutter-plugins
++.flutter-plugins-dependencies
++.pub-cache/
++.pub/
++/build/
++lib/gen_l10n/
++
++# Android related
++# NOTE: gradlew, gradlew.bat and gradle/wrapper/gradle-wrapper.jar are
++# intentionally committed so CI can build without a local Gradle install.
++**/android/.gradle
++**/android/captures/
++**/android/local.properties
++**/android/**/GeneratedPluginRegistrant.java
++**/android/key.properties
++
++# Keystores (NEVER commit release keystores)
++*.jks
++*.keystore
++
++# Build artifacts
++dist/
++*.apk
++*.aab
+diff --git a/tracktrain/opentrack_india/android/.gitignore b/tracktrain/opentrack_india/android/.gitignore
+new file mode 100644
+index 0000000..d2a8a08
+--- /dev/null
++++ b/tracktrain/opentrack_india/android/.gitignore
+@@ -0,0 +1,16 @@
++# NOTE: gradlew, gradlew.bat and gradle/wrapper/gradle-wrapper.jar are
++# intentionally NOT ignored: CI needs the wrapper committed to build.
++/.gradle
++/captures/
++/local.properties
++GeneratedPluginRegistrant.java
++.cxx/
++
++# Remember to never publicly share your keystore.
++# See https://flutter.dev/to/reference-keystore
++key.properties
++**/*.keystore
++**/*.jks
++
++# Kotlin IDE/session cache (created by Gradle builds)
++.kotlin/
+diff --git a/tracktrain/opentrack_india/android/gradle.properties b/tracktrain/opentrack_india/android/gradle.properties
+index e96108c..376870e 100644
+--- a/tracktrain/opentrack_india/android/gradle.properties
++++ b/tracktrain/opentrack_india/android/gradle.properties
+@@ -1,4 +1,4 @@
+-org.gradle.jvmargs=-Xmx8G -XX:MaxMetaspaceSize=4G -XX:ReservedCodeCacheSize=512m -XX:+HeapDumpOnOutOfMemoryError
++org.gradle.jvmargs=-Xmx2G -XX:MaxMetaspaceSize=768m -XX:ReservedCodeCacheSize=256m -XX:+HeapDumpOnOutOfMemoryError
+ android.useAndroidX=true
+ # This newDsl flag was added by the Flutter template
+ android.newDsl=false
+diff --git a/tracktrain/opentrack_india/assets/data/cell_towers.csv b/tracktrain/opentrack_india/assets/data/cell_towers.csv
+deleted file mode 100644
+index 2fc06e6..0000000
+--- a/tracktrain/opentrack_india/assets/data/cell_towers.csv
++++ /dev/null
+@@ -1,11 +0,0 @@
+-mcc,mnc,lac,cid,lat,lon,station_code,accuracy_m
+-404,10,4001,10001,26.2150,78.1802,GWL,2000
+-404,10,4001,10002,25.9000,78.3500,GWL,3000
+-404,10,4002,10003,28.6430,77.2190,NDLS,1200
+-404,20,5002,20001,25.4484,78.5685,JHS,2000
+-404,20,5002,20002,25.0000,78.5500,JHS,3500
+-404,92,7004,40001,27.1576,78.0098,AGC,2500
+-404,92,7004,40002,26.8000,77.9000,AGC,4000
+-405,840,6003,30001,23.2680,77.4020,BPL,1500
+-404,46,8005,50001,13.0820,80.2750,MAS,1800
+-404,46,8005,50002,12.9776,77.5665,SBC,2200
+diff --git a/tracktrain/opentrack_india/assets/data/stations.csv b/tracktrain/opentrack_india/assets/data/stations.csv
+deleted file mode 100644
+index d4f8ba6..0000000
+--- a/tracktrain/opentrack_india/assets/data/stations.csv
++++ /dev/null
+@@ -1,44 +0,0 @@
+-code,name,name_local,city,state,lat,lon
+-NDLS,New Delhi,नई दिल्ली,New Delhi,Delhi,28.6430,77.2190
+-NZM,Hazrat Nizamuddin,हज़रत निज़ामुद्दीन,New Delhi,Delhi,28.5882,77.2528
+-CSTM,Mumbai CSMT,मुंबई छत्रपति शिवाजी महाराज टर्मिनस,Mumbai,Maharashtra,18.9402,72.8356
+-MMCT,Mumbai Central,मुंबई सेंट्रल,Mumbai,Maharashtra,18.9712,72.8197
+-ADI,Ahmedabad Jn,અમદાવાદ જંક્શન,Ahmedabad,Gujarat,23.0225,72.6011
+-BRC,Vadodara Jn,વડોદરા જંક્શન,Vadodara,Gujarat,22.3064,73.1792
+-ST,Surat,સુરત,Surat,Gujarat,21.1875,72.8263
+-RTM,Ratlam Jn,रतलाम जंक्शन,Ratlam,Madhya Pradesh,23.3315,75.0367
+-KOTA,Kota Jn,कोटा जंक्शन,Kota,Rajasthan,25.1772,75.8458
+-JP,Jaipur Jn,जयपुर जंक्शन,Jaipur,Rajasthan,26.9196,75.7870
+-MTJ,Mathura Jn,मथुरा जंक्शन,Mathura,Uttar Pradesh,27.4812,77.6721
+-AGC,Agra Cantt,आगरा छावनी,Agra,Uttar Pradesh,27.1576,78.0098
+-GWL,Gwalior Jn,ग्वालियर जंक्शन,Gwalior,Madhya Pradesh,26.2150,78.1802
+-JHS,Jhansi Jn,झाँसी जंक्शन,Jhansi,Uttar Pradesh,25.4484,78.5685
+-BPL,Bhopal Jn,भोपाल जंक्शन,Bhopal,Madhya Pradesh,23.2680,77.4020
+-ET,Itarsi Jn,इतारसी जंक्शन,Itarsi,Madhya Pradesh,22.7530,77.7651
+-NGP,Nagpur Jn,नागपुर जंक्शन,Nagpur,Maharashtra,21.1520,79.0896
+-PUNE,Pune Jn,पुणे जंक्शन,Pune,Maharashtra,18.5285,73.8745
+-LKO,Lucknow,लखनऊ,Lucknow,Uttar Pradesh,26.8315,80.9150
+-CNB,Kanpur Central,कानपुर सेंट्रल,Kanpur,Uttar Pradesh,26.4592,80.3470
+-ASR,Amritsar Jn,ਅੰਮ੍ਰਿਤਸਰ ਜੰਕਸ਼ਨ,Amritsar,Punjab,31.6330,74.8728
+-CDG,Chandigarh,ਚੰਡੀਗੜ੍ਹ,Chandigarh,Chandigarh,30.6996,76.7892
+-HWH,Howrah Jn,হাওড়া জংশন,Howrah,West Bengal,22.5830,88.3660
+-PNBE,Patna Jn,पटना जंक्शन,Patna,Bihar,25.6029,85.1370
+-GAYA,Gaya Jn,गया जंक्शन,Gaya,Bihar,24.7960,85.0100
+-DDU,Pt DD Upadhyaya Jn,पं दीनदयाल उपाध्याय जंक्शन,Chandauli,Uttar Pradesh,25.2810,83.0190
+-BBS,Bhubaneswar,ଭୁବନେଶ୍ୱର,Bhubaneswar,Odisha,20.2660,85.8438
+-R,Raipur Jn,रायपुर जंक्शन,Raipur,Chhattisgarh,21.2508,81.6306
+-SC,Secunderabad Jn,సికింద్రాబాద్ జంక్షన్,Hyderabad,Telangana,17.4340,78.5009
+-BZA,Vijayawada Jn,విజయవాడ జంక్షన్,Vijayawada,Andhra Pradesh,16.5190,80.6300
+-RU,Renigunta Jn,రేణిగుంట జంక్షన్,Tirupati,Andhra Pradesh,13.6380,79.5080
+-MAS,MGR Chennai Central,சென்னை சென்ட்ரல்,Chennai,Tamil Nadu,13.0820,80.2750
+-MS,Chennai Egmore,சென்னை எழும்பூர்,Chennai,Tamil Nadu,13.0788,80.2617
+-KPD,Katpadi Jn,கட்பாடி ஜங்ஷன்,Vellore,Tamil Nadu,12.9680,79.1340
+-SBC,KSR Bengaluru,ಕೆಎಸ್ಆರ್ ಬೆಂಗಳೂರು,Bengaluru,Karnataka,12.9776,77.5665
+-ED,Erode Jn,ஈரோடு ஜங்ஷன்,Erode,Tamil Nadu,11.3430,77.7170
+-SA,Salem Jn,சேலம் ஜங்ஷன்,Salem,Tamil Nadu,11.6500,78.1480
+-TPJ,Tiruchirappalli Jn,திருச்சிராப்பள்ளி ஜங்ஷன்,Tiruchirappalli,Tamil Nadu,10.7930,78.6900
+-MDU,Madurai Jn,மதுரை ஜங்ஷன்,Madurai,Tamil Nadu,9.9200,78.1140
+-CBE,Coimbatore Jn,கோயம்புத்தூர் ஜங்ஷன்,Coimbatore,Tamil Nadu,11.0010,76.9660
+-TVC,Thiruvananthapuram Ctl,തിരുവനന്തപുരം സെൻട്രൽ,Thiruvananthapuram,Kerala,8.4868,76.9520
+-ERS,Ernakulam Jn,എറണാകുളം ജംഗ്ഷൻ,Ernakulam,Kerala,9.9700,76.2890
+-MAO,Madgaon Jn,मडगांव जंक्शन,Margao,Goa,15.2700,73.9770
+diff --git a/tracktrain/opentrack_india/assets/data/train_stops.csv b/tracktrain/opentrack_india/assets/data/train_stops.csv
+deleted file mode 100644
+index 3241d0f..0000000
+--- a/tracktrain/opentrack_india/assets/data/train_stops.csv
++++ /dev/null
+@@ -1,49 +0,0 @@
+-train_number,seq,station_code,arrival,departure,distance_km,day_offset
+-12951,1,MMCT,,17:00,0.0,0
+-12951,2,BRC,21:02,21:10,392.4,0
+-12951,3,RTM,00:18,00:25,653.1,1
+-12951,4,KOTA,03:35,03:40,917.5,1
+-12951,5,NDLS,08:32,,1384.2,1
+-12952,1,NDLS,,16:25,0.0,0
+-12952,2,KOTA,21:25,21:30,466.7,0
+-12952,3,RTM,00:35,00:42,731.1,1
+-12952,4,BRC,03:54,04:02,991.8,1
+-12952,5,MMCT,08:15,,1384.2,1
+-12621,1,MAS,,22:00,0.0,0
+-12621,2,BZA,04:00,04:10,431.0,1
+-12621,3,NGP,14:45,14:55,1083.0,1
+-12621,4,ET,16:35,16:45,1178.0,1
+-12621,5,BPL,18:05,18:15,1270.0,1
+-12621,6,JHS,21:15,21:25,1487.0,1
+-12621,7,GWL,22:23,22:28,1584.0,1
+-12621,8,AGC,23:35,23:40,1693.0,1
+-12621,9,NDLS,02:30,,2175.0,2
+-12622,1,NDLS,,22:30,0.0,0
+-12622,2,AGC,00:55,01:00,195.0,1
+-12622,3,JHS,02:45,02:55,303.0,1
+-12622,4,BPL,06:15,06:25,520.0,1
+-12622,5,NGP,10:25,10:35,702.0,1
+-12622,6,BZA,20:30,20:40,1744.0,1
+-12622,7,MAS,03:05,,2175.0,2
+-12001,1,NDLS,,06:00,0.0,0
+-12001,2,AGC,07:57,08:00,195.0,0
+-12001,3,GWL,09:23,09:25,306.0,0
+-12001,4,JHS,10:50,10:55,403.0,0
+-12001,5,BPL,13:39,,703.0,0
+-12002,1,BPL,,14:40,0.0,0
+-12002,2,JHS,17:15,17:20,300.0,0
+-12002,3,GWL,18:40,18:42,397.0,0
+-12002,4,AGC,20:05,20:08,508.0,0
+-12002,5,NDLS,22:10,,703.0,0
+-22691,1,SBC,,20:00,0.0,0
+-22691,2,SC,05:00,05:10,610.0,1
+-22691,3,NGP,15:30,15:40,1211.0,1
+-22691,4,BPL,20:50,21:00,1700.0,1
+-22691,5,JHS,23:50,23:55,1917.0,1
+-22691,6,NZM,05:55,,2361.0,2
+-22692,1,NZM,,20:45,0.0,0
+-22692,2,JHS,02:25,02:30,444.0,1
+-22692,3,BPL,05:35,05:45,661.0,1
+-22692,4,NGP,10:55,11:05,1150.0,1
+-22692,5,SC,21:05,21:15,1751.0,1
+-22692,6,SBC,06:20,,2361.0,2
+diff --git a/tracktrain/opentrack_india/assets/data/trains.csv b/tracktrain/opentrack_india/assets/data/trains.csv
+deleted file mode 100644
+index 9c91d59..0000000
+--- a/tracktrain/opentrack_india/assets/data/trains.csv
++++ /dev/null
+@@ -1,9 +0,0 @@
+-number,name,src,dst,days,type
+-12951,Mumbai Rajdhani,MMCT,NDLS,1111111,Rajdhani
+-12952,New Delhi Rajdhani,NDLS,MMCT,1111111,Rajdhani
+-12621,Tamil Nadu Express,MAS,NDLS,1111111,Superfast
+-12622,Tamil Nadu Express,NDLS,MAS,1111111,Superfast
+-12001,Bhopal Shatabdi,NDLS,BPL,1111110,Shatabdi
+-12002,New Delhi Shatabdi,BPL,NDLS,1111110,Shatabdi
+-22691,Bengaluru Rajdhani,SBC,NZM,1111111,Rajdhani
+-22692,Nizamuddin Rajdhani,NZM,SBC,1111111,Rajdhani
+diff --git a/tracktrain/opentrack_india/lib/data/db/app_database.dart b/tracktrain/opentrack_india/lib/data/db/app_database.dart
+index c0694ca..aa052a4 100644
+--- a/tracktrain/opentrack_india/lib/data/db/app_database.dart
++++ b/tracktrain/opentrack_india/lib/data/db/app_database.dart
+@@ -1,278 +1,101 @@
++import 'dart:io';
++import 'dart:typed_data';
++
+ import 'package:flutter/services.dart' show rootBundle;
+ import 'package:path/path.dart' as p;
+ import 'package:sqflite/sqflite.dart';
+ 
+-import '../../core/csv.dart';
+-
+-/// Owns the bundled offline timetable database.
+-///
+-/// Tables:
+-///  * `stations`     – ~8,500 production station codes (sample set bundled)
+-///  * `trains`       – ~12,000 production trains (sample set bundled)
+-///  * `train_stops`  – scheduled halts per train
+-///  * `cell_towers`  – compressed OpenCelliD-style tower → location table
+-///
+-/// Full-text search runs through SQLite FTS5 virtual tables mirrored with
+-/// triggers. Devices whose system SQLite lacks FTS5 fall back to indexed
+-/// LIKE queries transparently; repositories check [ftsAvailable].
+-///
+-/// Self-healing: if the first-launch seeding was ever interrupted (app
+-/// force-stopped, install glitch, missing asset at that moment), the next
+-/// open detects empty tables and rebuilds the whole database.
++/// The production timetable ships as a prebuilt SQLite database asset
++/// (~29 MB: 8,736 stations, 5,207 trains, 416,629 stops) which is copied
++/// verbatim on first launch. Bump the generation in [_dbFileName] whenever
++/// the bundled data or schema changes — the app then swaps in the new file.
+ class AppDatabase {
++  static const String _dbFileName = 'opentrack_timetable_v1.db';
++  static const String _assetPath = 'assets/db/opentrack_timetable.db';
++  static AppDatabase? _instance;
++  static AppDatabase get instance => _instance ??= AppDatabase._();
+   AppDatabase._();
+ 
+-  static final AppDatabase instance = AppDatabase._();
+-  static const _fileName = 'opentrack_timetable.db';
++  Database? _db;
+ 
+-  Future<Database>? _opening;
+-  bool _ftsAvailable = false;
+-  int _stationCount = 0;
+-  int _trainCount = 0;
++  /// Cached row counts (set in [_open]) for the typo-scan fallback.
++  int stationCount = 0;
++  int trainCount = 0;
+ 
+-  /// Asset reader; tests swap this for direct file access.
+-  Future<String> Function(String assetPath) assetLoader = rootBundle.loadString;
++  /// The bundled DB always carries FTS5 indexes.
++  bool get ftsAvailable => true;
+ 
+-  /// Database file path override for tests; null uses the platform path.
++  /// Test hooks.
+   String? debugPathOverride;
++  Future<Uint8List> Function(String assetPath)? debugAssetBytes;
+ 
+-  /// Drops the cached connection so the next [database] access re-opens the
+-  /// file (used by tests to simulate an app relaunch).
+-  void debugReset() {
+-    _opening = null;
+-    _ftsAvailable = false;
+-    _stationCount = 0;
+-    _trainCount = 0;
+-  }
+-
+-  /// True when FTS5 virtual tables were created on this device.
+-  bool get ftsAvailable => _ftsAvailable;
+-
+-  int get stationCount => _stationCount;
+-  int get trainCount => _trainCount;
+-
+-  Future<Database> get database => _opening ??= _open();
+-
+-  /// Warms the database on app start; safe to call repeatedly.
+-  Future<void> ensureReady() => database;
+-
+-  Future<Database> _open() async {
+-    final path = debugPathOverride ??
+-        p.join(await getDatabasesPath(), _fileName);
+-    final db = await openDatabase(
+-      path,
+-      version: 1,
+-      onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+-      onCreate: _onCreate,
+-    );
+-    await _repairIfEmpty(db);
+-    await _refreshCounts(db);
+-    return db;
+-  }
+-
+-  Future<void> _onCreate(Database db, int version) async {
+-    await _createSchema(db);
+-    await _createFts(db);
+-    await _seed(db);
+-  }
+-
+-  /// If a previous seeding was interrupted the tables exist but are empty;
+-  /// drop everything and build again so search never faces a hollow DB.
+-  Future<void> _repairIfEmpty(Database db) async {
+-    final count = Sqflite.firstIntValue(
+-      await db.rawQuery('SELECT COUNT(*) AS c FROM stations'),
+-    );
+-    if ((count ?? 0) > 0) return;
+-
+-    await db.execute('DROP TABLE IF EXISTS stations_fts');
+-    await db.execute('DROP TABLE IF EXISTS trains_fts');
+-    await db.execute('DROP TRIGGER IF EXISTS stations_fts_ai');
+-    await db.execute('DROP TRIGGER IF EXISTS trains_fts_ai');
+-    await db.execute('DROP TABLE IF EXISTS train_stops');
+-    await db.execute('DROP TABLE IF EXISTS cell_towers');
+-    await db.execute('DROP TABLE IF EXISTS trains');
+-    await db.execute('DROP TABLE IF EXISTS stations');
+-
+-    _ftsAvailable = false;
+-    await _createSchema(db);
+-    await _createFts(db);
+-    await _seed(db);
++  /// Reset (test only): close + force re-open.
++  Future<void> debugReset() async {
++    await _db?.close();
++    _db = null;
+   }
+ 
+-  Future<void> _createSchema(Database db) async {
+-    await db.execute('''
+-      CREATE TABLE IF NOT EXISTS stations (
+-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+-        code TEXT NOT NULL UNIQUE,
+-        name TEXT NOT NULL,
+-        name_local TEXT NOT NULL DEFAULT '',
+-        city TEXT NOT NULL DEFAULT '',
+-        state TEXT NOT NULL DEFAULT '',
+-        lat REAL NOT NULL DEFAULT 0,
+-        lon REAL NOT NULL DEFAULT 0
+-      )
+-    ''');
+-    await db.execute('''
+-      CREATE TABLE IF NOT EXISTS trains (
+-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+-        number TEXT NOT NULL UNIQUE,
+-        name TEXT NOT NULL,
+-        src TEXT NOT NULL,
+-        dst TEXT NOT NULL,
+-        days TEXT NOT NULL DEFAULT '1111111',
+-        type TEXT NOT NULL DEFAULT 'Express'
+-      )
+-    ''');
+-    await db.execute('''
+-      CREATE TABLE IF NOT EXISTS train_stops (
+-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+-        train_number TEXT NOT NULL,
+-        seq INTEGER NOT NULL,
+-        station_code TEXT NOT NULL,
+-        arrival TEXT NOT NULL DEFAULT '',
+-        departure TEXT NOT NULL DEFAULT '',
+-        distance_km REAL NOT NULL DEFAULT 0,
+-        day_offset INTEGER NOT NULL DEFAULT 0
+-      )
+-    ''');
+-    await db.execute('''
+-      CREATE TABLE IF NOT EXISTS cell_towers (
+-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+-        mcc INTEGER NOT NULL,
+-        mnc INTEGER NOT NULL,
+-        lac INTEGER NOT NULL,
+-        cid INTEGER NOT NULL,
+-        lat REAL NOT NULL,
+-        lon REAL NOT NULL,
+-        station_code TEXT NOT NULL DEFAULT '',
+-        accuracy_m REAL NOT NULL DEFAULT 3000,
+-        UNIQUE (mcc, mnc, lac, cid)
+-      )
+-    ''');
++  Future<Database> get database async => _db ??= await _open();
+ 
+-    await db.execute(
+-      'CREATE INDEX IF NOT EXISTS idx_stations_name ON stations (name)',
+-    );
+-    await db.execute(
+-      'CREATE INDEX IF NOT EXISTS idx_stations_local ON stations (name_local)',
+-    );
+-    await db.execute(
+-      'CREATE INDEX IF NOT EXISTS idx_trains_name ON trains (name)',
+-    );
+-    await db.execute(
+-      'CREATE INDEX IF NOT EXISTS idx_stops_train ON train_stops (train_number, seq)',
+-    );
+-    await db.execute(
+-      'CREATE INDEX IF NOT EXISTS idx_stops_station ON train_stops (station_code)',
+-    );
++  /// Ensure the database is copied and readable before first use.
++  Future<void> ensureReady() async {
++    await database;
+   }
+ 
+-  /// Attempts to create FTS5 mirrors. Older Android SQLite builds without
+-  /// FTS5 simply flip the fallback flag; nothing else breaks.
+-  Future<void> _createFts(Database db) async {
+-    try {
+-      await db.execute('''
+-        CREATE VIRTUAL TABLE stations_fts USING fts5(
+-          name, name_local, code, city,
+-          content='stations', content_rowid='id'
+-        )
+-      ''');
+-      await db.execute('''
+-        CREATE TRIGGER stations_fts_ai AFTER INSERT ON stations BEGIN
+-          INSERT INTO stations_fts(rowid, name, name_local, code, city)
+-          VALUES (new.id, new.name, new.name_local, new.code, new.city);
+-        END
+-      ''');
+-      await db.execute('''
+-        CREATE VIRTUAL TABLE trains_fts USING fts5(
+-          name, number, content='trains', content_rowid='id'
+-        )
+-      ''');
+-      await db.execute('''
+-        CREATE TRIGGER trains_fts_ai AFTER INSERT ON trains BEGIN
+-          INSERT INTO trains_fts(rowid, name, number)
+-          VALUES (new.id, new.name, new.number);
+-        END
+-      ''');
+-      _ftsAvailable = true;
+-    } on DatabaseException {
+-      _ftsAvailable = false;
+-    } catch (_) {
+-      _ftsAvailable = false;
++  Future<Database> _open() async {
++    if (debugPathOverride != null) {
++      final db = await openDatabase(debugPathOverride!,
++          onConfigure: _configure);
++      await _refreshCounts(db);
++      return db;
+     }
+-  }
+ 
+-  Future<void> _seed(Database db) async {
+-    final stationsCsv = await assetLoader('assets/data/stations.csv');
+-    final trainsCsv = await assetLoader('assets/data/trains.csv');
+-    final stopsCsv = await assetLoader('assets/data/train_stops.csv');
+-    final towersCsv = await assetLoader('assets/data/cell_towers.csv');
+-
+-    final batch = db.batch();
+-
+-    final (_, stationRows) = Csv.parse(stationsCsv);
+-    for (final row in stationRows) {
+-      batch.insert('stations', {
+-        'code': row['code'] ?? '',
+-        'name': row['name'] ?? '',
+-        'name_local': row['name_local'] ?? '',
+-        'city': row['city'] ?? '',
+-        'state': row['state'] ?? '',
+-        'lat': double.tryParse(row['lat'] ?? '') ?? 0.0,
+-        'lon': double.tryParse(row['lon'] ?? '') ?? 0.0,
+-      });
++    final path = p.join(await getDatabasesPath(), _dbFileName);
++    if (!await File(path).exists()) {
++      await _copyAssetTo(path);
+     }
+ 
+-    final (_, trainRows) = Csv.parse(trainsCsv);
+-    for (final row in trainRows) {
+-      batch.insert('trains', {
+-        'number': row['number'] ?? '',
+-        'name': row['name'] ?? '',
+-        'src': row['src'] ?? '',
+-        'dst': row['dst'] ?? '',
+-        'days': row['days'] ?? '1111111',
+-        'type': row['type'] ?? 'Express',
+-      });
+-    }
++    var db = await openDatabase(path, onConfigure: _configure);
+ 
+-    final (_, stopRows) = Csv.parse(stopsCsv);
+-    for (final row in stopRows) {
+-      batch.insert('train_stops', {
+-        'train_number': row['train_number'] ?? '',
+-        'seq': int.tryParse(row['seq'] ?? '') ?? 0,
+-        'station_code': row['station_code'] ?? '',
+-        'arrival': row['arrival'] ?? '',
+-        'departure': row['departure'] ?? '',
+-        'distance_km': double.tryParse(row['distance_km'] ?? '') ?? 0.0,
+-        'day_offset': int.tryParse(row['day_offset'] ?? '') ?? 0,
+-      });
++    // Self-heal: if the bundled file is missing/empty (corrupt copy),
++    // re-copy the pristine asset and reopen.
++    final count = Sqflite.firstIntValue(
++        await db.rawQuery('SELECT COUNT(*) FROM stations'));
++    if ((count ?? 0) == 0) {
++      await db.close();
++      await File(path).delete();
++      await _copyAssetTo(path);
++      db = await openDatabase(path, onConfigure: _configure);
+     }
++    await _refreshCounts(db);
++    return db;
++  }
+ 
+-    final (_, towerRows) = Csv.parse(towersCsv);
+-    for (final row in towerRows) {
+-      batch.insert('cell_towers', {
+-        'mcc': int.tryParse(row['mcc'] ?? '') ?? 0,
+-        'mnc': int.tryParse(row['mnc'] ?? '') ?? 0,
+-        'lac': int.tryParse(row['lac'] ?? '') ?? 0,
+-        'cid': int.tryParse(row['cid'] ?? '') ?? 0,
+-        'lat': double.tryParse(row['lat'] ?? '') ?? 0.0,
+-        'lon': double.tryParse(row['lon'] ?? '') ?? 0.0,
+-        'station_code': row['station_code'] ?? '',
+-        'accuracy_m': double.tryParse(row['accuracy_m'] ?? '') ?? 3000.0,
+-      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+-    }
++  Future<void> _refreshCounts(Database db) async {
++    stationCount = Sqflite.firstIntValue(
++            await db.rawQuery('SELECT COUNT(*) FROM stations')) ??
++        0;
++    trainCount = Sqflite.firstIntValue(
++            await db.rawQuery('SELECT COUNT(*) FROM trains')) ??
++        0;
++  }
+ 
+-    await batch.commit(noResult: true);
++  Future<void> _copyAssetTo(String path) async {
++    final Future<Uint8List> Function(String) loader = debugAssetBytes ??
++        (String a) async {
++          final data = await rootBundle.load(a);
++          return data.buffer.asUint8List(
++              data.offsetInBytes, data.lengthInBytes);
++        };
++    final bytes = await loader(_assetPath);
++    final file = File(path);
++    if (!await file.parent.exists()) {
++      await file.parent.create(recursive: true);
++    }
++    await file.writeAsBytes(bytes, flush: true);
+   }
+ 
+-  Future<void> _refreshCounts(Database db) async {
+-    final stations = Sqflite.firstIntValue(
+-      await db.rawQuery('SELECT COUNT(*) FROM stations'),
+-    );
+-    final trains = Sqflite.firstIntValue(
+-      await db.rawQuery('SELECT COUNT(*) FROM trains'),
+-    );
+-    _stationCount = stations ?? 0;
+-    _trainCount = trains ?? 0;
++  Future<void> _configure(Database db) async {
++    await db.execute('PRAGMA foreign_keys = ON');
+   }
+ }
+diff --git a/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart b/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
+index 24d0fd3..56674f4 100644
+--- a/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
++++ b/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
+@@ -44,7 +44,12 @@ class StationRepository {
+     }
+ 
+     final ranked = candidates.values.toList()
+-      ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
++      ..sort((a, b) {
++        final cmp = _score(q, b).compareTo(_score(q, a));
++        // Tie-break: shorter (more specific) names first, so "howra" ranks
++        // HOWRAH JN above HOWRAH GOODS.
++        return cmp != 0 ? cmp : a.name.length.compareTo(b.name.length);
++      });
+     return ranked.take(limit).toList(growable: false);
+   }
+ 
+diff --git a/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart b/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
+index 0c1b6d2..f84a3ea 100644
+--- a/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
++++ b/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
+@@ -51,7 +51,10 @@ class TrainRepository {
+     }
+ 
+     final ranked = candidates.values.toList()
+-      ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
++      ..sort((a, b) {
++        final cmp = _score(q, b).compareTo(_score(q, a));
++        return cmp != 0 ? cmp : a.name.length.compareTo(b.name.length);
++      });
+     return ranked.take(limit).toList(growable: false);
+   }
+ 
+diff --git a/tracktrain/opentrack_india/pubspec.yaml b/tracktrain/opentrack_india/pubspec.yaml
+index 9188ff2..e912dfd 100644
+--- a/tracktrain/opentrack_india/pubspec.yaml
++++ b/tracktrain/opentrack_india/pubspec.yaml
+@@ -5,7 +5,7 @@ description: >-
+   destination alarms, and a 100% on-device usage dashboard. Zero paid API
+   keys, zero telemetry.
+ publish_to: "none"
+-version: 1.0.0+1
++version: 1.1.0+2
+ 
+ environment:
+   sdk: ">=3.4.0 <4.0.0"
+@@ -51,4 +51,4 @@ flutter:
+   generate: true
+   uses-material-design: true
+   assets:
+-    - assets/data/
++    - assets/db/
+diff --git a/tracktrain/opentrack_india/test/database_integration_test.dart b/tracktrain/opentrack_india/test/database_integration_test.dart
+index 7a5e7ee..208673e 100644
+--- a/tracktrain/opentrack_india/test/database_integration_test.dart
++++ b/tracktrain/opentrack_india/test/database_integration_test.dart
+@@ -6,99 +6,95 @@ import 'package:opentrack_india/data/repositories/station_repository.dart';
+ import 'package:opentrack_india/data/repositories/train_repository.dart';
+ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+ 
+-/// Reads the real bundled CSVs from disk instead of rootBundle so the exact
+-/// on-device pipeline (schema → FTS5 → seed → search) can be verified in CI.
+-Future<String> _fileAssetLoader(String path) => File(path).readAsString();
+-
++/// End-to-end tests against the real bundled railway dataset
++/// (8,736 stations / 5,207 trains / 416,629 stops).
+ void main() {
+-  const stations = StationRepository();
+-  const trains = TrainRepository();
++  late File dbCopy;
+ 
+   setUpAll(() {
+     sqfliteFfiInit();
+     databaseFactory = databaseFactoryFfi;
+-    AppDatabase.instance.debugPathOverride =
+-        '${Directory.systemTemp.path}/opentrack_test_'
+-        '${DateTime.now().microsecondsSinceEpoch}.db';
+-    AppDatabase.instance.assetLoader = _fileAssetLoader;
++    TestWidgetsFlutterBinding.ensureInitialized();
++
++    // Work on a scratch copy so the asset itself is never mutated.
++    // sqflite_common_ffi needs an absolute path, or it resolves the file
++    // inside its own sandbox directory.
++    final dir = Directory.current.absolute.path;
++    dbCopy = File('$dir/test/.scratch_railway.db');
++    dbCopy.writeAsBytesSync(File('$dir/assets/db/opentrack_timetable.db')
++        .readAsBytesSync());
++
++    AppDatabase.instance.debugPathOverride = dbCopy.path;
+   });
+ 
+   tearDownAll(() async {
+-    final path = AppDatabase.instance.debugPathOverride;
+-    await databaseFactory.deleteDatabase(path!);
++    await AppDatabase.instance.debugReset();
++    if (dbCopy.existsSync()) dbCopy.deleteSync();
+   });
+ 
+-  test('database seeds the bundled dataset with FTS5 enabled', () async {
++  test('dataset is the full Indian Railways bundle', () async {
+     final db = await AppDatabase.instance.database;
+-    expect(db, isNotNull);
+-    expect(AppDatabase.instance.stationCount, 43);
+-    expect(AppDatabase.instance.trainCount, 8);
+-    expect(AppDatabase.instance.ftsAvailable, isTrue);
+-  });
+-
+-  test('empty query returns popular stations (picker initial state)',
+-      () async {
+-    final results = await stations.search('');
+-    expect(results, isNotEmpty);
++    Future<int> count(String table) async =>
++        (await db.rawQuery('SELECT COUNT(*) AS n FROM $table')).first['n'] as int;
++    final stations = await count('stations');
++    final trains = await count('trains');
++    final stops = await count('train_stops');
++    expect(stations, greaterThan(8000));
++    expect(trains, greaterThan(5000));
++    expect(stops, greaterThan(400000));
+   });
+ 
+-  test('station search: exact and typo queries', () async {
+-    final exact = await stations.search('chennai');
+-    expect(exact.map((s) => s.code), contains('MAS'));
++  test('exact + partial station search works on the full dataset', () async {
++    final stations = await const StationRepository().search('chennai central');
++    expect(stations, isNotEmpty);
++    expect(stations.first.code, 'MAS');
+ 
+-    final typo = await stations.search('bopal');
+-    expect(typo.map((s) => s.code), contains('BPL'));
++    final partial = await const StationRepository().search('secund');
++    expect(partial.any((s) => s.code == 'SC'), isTrue,
++        reason: 'partial name match should find Secunderabad');
+ 
+-    final byCode = await stations.search('ndls');
+-    expect(byCode.map((s) => s.code), contains('NDLS'));
++    final byCode = await const StationRepository().search('ndls');
++    expect(byCode.first.code, 'NDLS');
+   });
+ 
+-  test('station search works with vernacular (Devanagari) input', () async {
+-    final results = await stations.search('नई दिल्ली');
+-    expect(results, isNotEmpty);
+-    expect(results.first.code, 'NDLS');
++  test('typo-tolerant station search recovers from misspellings', () async {
++    expect((await const StationRepository().search('howrah')).first.code, 'HWH');
++    final typo = await const StationRepository().search('howra');
++    expect(typo.map((s) => s.code), contains('HWH'));
++    final typo2 = await const StationRepository().search('benaras');
++    expect(typo2.map((s) => s.name), isNotEmpty);
+   });
+ 
+-  test('train search: typo, number and name queries', () async {
+-    final typo = await trains.search('rajdhni');
+-    expect(typo.map((t) => t.number), contains('12951'));
+-
+-    final byNumber = await trains.search('12951');
++  test('train search finds real trains by number and name', () async {
++    final byNumber = await const TrainRepository().search('12301');
+     expect(byNumber, isNotEmpty);
+-    expect(byNumber.first.number, '12951');
+-
+-    final byName = await trains.search('tamil nadu');
+-    expect(byName.map((t) => t.number), contains('12621'));
+-  });
++    expect(byNumber.first.number, '12301');
+ 
+-  test('train schedule returns ordered stops with station names', () async {
+-    final schedule = await trains.getSchedule('12951');
+-    expect(schedule.length, 5);
+-    expect(schedule.first.stationCode, 'MMCT');
+-    expect(schedule.last.stationCode, 'NDLS');
+-    expect(schedule.last.stationName, 'New Delhi');
+-    expect(schedule.first.isOrigin, isTrue);
++    final rajdhani = await const TrainRepository().search('rajdhani');
++    expect(rajdhani.length, greaterThan(5));
+   });
+ 
+-  test('trains halting at a station are listed', () async {
+-    final halting = await trains.trainsStoppingAt('BPL');
+-    expect(halting.map((t) => t.number), containsAll(['12621', '12001']));
++  test('schedule stops are ordered with times', () async {
++    final stops = await const TrainRepository().getSchedule('12301');
++    expect(stops.length, greaterThan(150));
++    expect(stops.first.stationCode, 'HWH');
++    expect(stops.last.stationCode, 'NDLS');
++    expect(stops.first.departure, '16:55');
++    expect(stops.last.arrival, isNotEmpty);
++    for (var i = 1; i < stops.length; i++) {
++      expect(stops[i].sequence, greaterThan(stops[i - 1].sequence));
++    }
+   });
+ 
+-  test('self-healing rebuilds an emptied database on relaunch', () async {
++  test('between-stations lookup works offline', () async {
+     final db = await AppDatabase.instance.database;
+-    await db.execute('DELETE FROM stations');
+-    await db.execute('DELETE FROM stations_fts');
+-    await db.execute('DELETE FROM trains');
+-    await db.close();
+-
+-    // Simulate the next app launch opening the same hollow file.
+-    AppDatabase.instance.debugReset();
+-    await AppDatabase.instance.database;
+-    expect(AppDatabase.instance.stationCount, 43);
+-    expect(AppDatabase.instance.trainCount, 8);
+-
+-    final healed = await stations.search('chennai');
+-    expect(healed.map((s) => s.code), contains('MAS'));
++    final rows = await db.rawQuery('''
++      SELECT DISTINCT t.number FROM train_stops a
++      JOIN train_stops b ON a.train_number = b.train_number
++      JOIN trains t ON t.number = a.train_number
++      WHERE a.station_code = ? AND b.station_code = ? AND a.seq < b.seq
++      LIMIT 20
++    ''', ['NDLS', 'HWH']);
++    expect(rows.length, greaterThanOrEqualTo(5));
+   });
+ }
