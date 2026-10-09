@@ -1,0 +1,53 @@
+name: opentrack_india
+description: >-
+  OpenTrack India - production-ready, offline-first Android railway tracking
+  app. Bundled SQLite (FTS5) timetable, GPS/cell-tower dual tracking,
+  destination alarms, and a 100% on-device usage dashboard. Zero paid API
+  keys, zero telemetry.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State management
+  flutter_riverpod: ^2.5.1
+
+  # Offline storage
+  sqflite: ^2.3.3+1
+  path: ^1.9.0
+  path_provider: ^2.1.4
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Location & sensors
+  geolocator: ^12.0.0
+  permission_handler: ^11.3.1
+
+  # Local alarms & notifications
+  flutter_local_notifications: ^17.2.3
+  timezone: ^0.9.4
+
+  # Connectivity & live fallback
+  connectivity_plus: ^6.0.5
+  http: ^1.2.2
+
+  # Localization / IST date-time formatting
+  intl: ">=0.19.0 <0.23.0"
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  generate: true
+  uses-material-design: true
+  assets:
+    - assets/data/
