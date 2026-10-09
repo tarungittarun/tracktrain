@@ -1,12 +1,22 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../../core/fuzzy_match.dart';
 import '../db/app_database.dart';
 import '../models/station.dart';
 
-/// Typo-tolerant station search backed by SQLite FTS5 prefix matching with a
-/// Dart-side Levenshtein re-rank, plus indexed LIKE fallback. Vernacular
-/// names are searchable because `name_local` is part of the FTS index.
+/// Typo-tolerant station search:
+///  1. SQLite FTS5 prefix matching (fast path, includes `name_local` so
+///     vernacular scripts are searchable)
+///  2. Indexed LIKE substring matching
+///  3. Full-dataset Levenshtein scan — the typo net that catches queries
+///     like "bopal" → Bhopal which neither FTS nor LIKE can see.
 class StationRepository {
   const StationRepository();
+
+  /// Cached station list for the fuzzy scan (rebuilt automatically after a
+  /// database self-heal thanks to the count check).
+  static List<Station>? _fuzzyCache;
+  static int _fuzzyCacheCount = -1;
 
   Future<List<Station>> search(String query, {int limit = 15}) async {
     final db = await AppDatabase.instance.database;
@@ -26,9 +36,34 @@ class StationRepository {
       candidates[station.id] = station;
     }
 
+    // Typo net: when the fast paths barely matched, score every station.
+    if (candidates.length < 3 && q.length >= 3) {
+      for (final station in await _fuzzyScan(db, q, limit)) {
+        candidates[station.id] = station;
+      }
+    }
+
     final ranked = candidates.values.toList()
       ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
     return ranked.take(limit).toList(growable: false);
+  }
+
+  Future<List<Station>> _fuzzyScan(Database db, String query, int limit) async {
+    final stationTotal = AppDatabase.instance.stationCount;
+    if (_fuzzyCache == null || _fuzzyCacheCount != stationTotal) {
+      _fuzzyCache = (await db.query('stations'))
+          .map(Station.fromRow)
+          .toList(growable: false);
+      _fuzzyCacheCount = stationTotal;
+    }
+
+    final scored = <(double, Station)>[];
+    for (final station in _fuzzyCache!) {
+      final score = _score(query, station);
+      if (score >= 0.55) scored.add((score, station));
+    }
+    scored.sort((a, b) => b.$1.compareTo(a.$1));
+    return scored.take(limit).map((e) => e.$2).toList(growable: false);
   }
 
   Future<Station?> getByCode(String code) async {
@@ -65,12 +100,12 @@ class StationRepository {
     return _popularStations(db, limit);
   }
 
-  Future<List<Station>> _popularStations(dynamic db, int limit) async {
+  Future<List<Station>> _popularStations(Database db, int limit) async {
     final rows = await db.query('stations', orderBy: 'id', limit: limit);
     return rows.map(Station.fromRow).toList(growable: false);
   }
 
-  Future<List<Station>> _ftsSearch(dynamic db, String query, int limit) async {
+  Future<List<Station>> _ftsSearch(Database db, String query, int limit) async {
     final match = _buildFtsMatch(query);
     if (match.isEmpty) return const [];
     try {
@@ -89,7 +124,7 @@ class StationRepository {
     }
   }
 
-  Future<List<Station>> _likeSearch(dynamic db, String query, int limit) async {
+  Future<List<Station>> _likeSearch(Database db, String query, int limit) async {
     final like = '%$query%';
     final rows = await db.query(
       'stations',

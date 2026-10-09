@@ -1,12 +1,17 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../../core/fuzzy_match.dart';
 import '../db/app_database.dart';
 import '../models/train.dart';
 import '../models/train_stop.dart';
 
 /// Train search and schedule access with the same typo-tolerant pipeline as
-/// [StationRepository].
+/// [StationRepository], including the full-dataset Levenshtein typo net.
 class TrainRepository {
   const TrainRepository();
+
+  static List<Train>? _fuzzyCache;
+  static int _fuzzyCacheCount = -1;
 
   Future<List<Train>> search(String query, {int limit = 15}) async {
     final db = await AppDatabase.instance.database;
@@ -38,9 +43,34 @@ class TrainRepository {
       candidates[train.id] = train;
     }
 
+    // Typo net for misspelled train names ("rajdhni" → Rajdhani).
+    if (candidates.isEmpty && q.length >= 3) {
+      for (final train in await _fuzzyScan(db, q, limit)) {
+        candidates[train.id] = train;
+      }
+    }
+
     final ranked = candidates.values.toList()
       ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
     return ranked.take(limit).toList(growable: false);
+  }
+
+  Future<List<Train>> _fuzzyScan(Database db, String query, int limit) async {
+    final trainTotal = AppDatabase.instance.trainCount;
+    if (_fuzzyCache == null || _fuzzyCacheCount != trainTotal) {
+      _fuzzyCache = (await db.query('trains'))
+          .map(Train.fromRow)
+          .toList(growable: false);
+      _fuzzyCacheCount = trainTotal;
+    }
+
+    final scored = <(double, Train)>[];
+    for (final train in _fuzzyCache!) {
+      final score = _score(query, train);
+      if (score >= 0.55) scored.add((score, train));
+    }
+    scored.sort((a, b) => b.$1.compareTo(a.$1));
+    return scored.take(limit).map((e) => e.$2).toList(growable: false);
   }
 
   Future<Train?> getByNumber(String number) async {
@@ -81,7 +111,7 @@ class TrainRepository {
     return rows.map(Train.fromRow).toList(growable: false);
   }
 
-  Future<List<Train>> _ftsSearch(dynamic db, String query, int limit) async {
+  Future<List<Train>> _ftsSearch(Database db, String query, int limit) async {
     final tokens = query
         .split(RegExp(r'\s+'))
         .where((t) => t.isNotEmpty)
@@ -103,7 +133,7 @@ class TrainRepository {
     }
   }
 
-  Future<List<Train>> _likeSearch(dynamic db, String query, int limit) async {
+  Future<List<Train>> _likeSearch(Database db, String query, int limit) async {
     final rows = await db.query(
       'trains',
       where: 'name LIKE ? OR number LIKE ?',

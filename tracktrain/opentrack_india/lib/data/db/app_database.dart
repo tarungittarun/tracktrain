@@ -15,6 +15,10 @@ import '../../core/csv.dart';
 /// Full-text search runs through SQLite FTS5 virtual tables mirrored with
 /// triggers. Devices whose system SQLite lacks FTS5 fall back to indexed
 /// LIKE queries transparently; repositories check [ftsAvailable].
+///
+/// Self-healing: if the first-launch seeding was ever interrupted (app
+/// force-stopped, install glitch, missing asset at that moment), the next
+/// open detects empty tables and rebuilds the whole database.
 class AppDatabase {
   AppDatabase._();
 
@@ -25,6 +29,21 @@ class AppDatabase {
   bool _ftsAvailable = false;
   int _stationCount = 0;
   int _trainCount = 0;
+
+  /// Asset reader; tests swap this for direct file access.
+  Future<String> Function(String assetPath) assetLoader = rootBundle.loadString;
+
+  /// Database file path override for tests; null uses the platform path.
+  String? debugPathOverride;
+
+  /// Drops the cached connection so the next [database] access re-opens the
+  /// file (used by tests to simulate an app relaunch).
+  void debugReset() {
+    _opening = null;
+    _ftsAvailable = false;
+    _stationCount = 0;
+    _trainCount = 0;
+  }
 
   /// True when FTS5 virtual tables were created on this device.
   bool get ftsAvailable => _ftsAvailable;
@@ -38,21 +57,51 @@ class AppDatabase {
   Future<void> ensureReady() => database;
 
   Future<Database> _open() async {
-    final dir = await getDatabasesPath();
-    final path = p.join(dir, _fileName);
+    final path = debugPathOverride ??
+        p.join(await getDatabasesPath(), _fileName);
     final db = await openDatabase(
       path,
       version: 1,
       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
       onCreate: _onCreate,
     );
+    await _repairIfEmpty(db);
     await _refreshCounts(db);
     return db;
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await _createSchema(db);
+    await _createFts(db);
+    await _seed(db);
+  }
+
+  /// If a previous seeding was interrupted the tables exist but are empty;
+  /// drop everything and build again so search never faces a hollow DB.
+  Future<void> _repairIfEmpty(Database db) async {
+    final count = Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) AS c FROM stations'),
+    );
+    if ((count ?? 0) > 0) return;
+
+    await db.execute('DROP TABLE IF EXISTS stations_fts');
+    await db.execute('DROP TABLE IF EXISTS trains_fts');
+    await db.execute('DROP TRIGGER IF EXISTS stations_fts_ai');
+    await db.execute('DROP TRIGGER IF EXISTS trains_fts_ai');
+    await db.execute('DROP TABLE IF EXISTS train_stops');
+    await db.execute('DROP TABLE IF EXISTS cell_towers');
+    await db.execute('DROP TABLE IF EXISTS trains');
+    await db.execute('DROP TABLE IF EXISTS stations');
+
+    _ftsAvailable = false;
+    await _createSchema(db);
+    await _createFts(db);
+    await _seed(db);
+  }
+
+  Future<void> _createSchema(Database db) async {
     await db.execute('''
-      CREATE TABLE stations (
+      CREATE TABLE IF NOT EXISTS stations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         code TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
@@ -64,7 +113,7 @@ class AppDatabase {
       )
     ''');
     await db.execute('''
-      CREATE TABLE trains (
+      CREATE TABLE IF NOT EXISTS trains (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         number TEXT NOT NULL UNIQUE,
         name TEXT NOT NULL,
@@ -75,7 +124,7 @@ class AppDatabase {
       )
     ''');
     await db.execute('''
-      CREATE TABLE train_stops (
+      CREATE TABLE IF NOT EXISTS train_stops (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         train_number TEXT NOT NULL,
         seq INTEGER NOT NULL,
@@ -87,7 +136,7 @@ class AppDatabase {
       )
     ''');
     await db.execute('''
-      CREATE TABLE cell_towers (
+      CREATE TABLE IF NOT EXISTS cell_towers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         mcc INTEGER NOT NULL,
         mnc INTEGER NOT NULL,
@@ -101,18 +150,21 @@ class AppDatabase {
       )
     ''');
 
-    await db.execute('CREATE INDEX idx_stations_name ON stations (name)');
-    await db.execute('CREATE INDEX idx_stations_local ON stations (name_local)');
-    await db.execute('CREATE INDEX idx_trains_name ON trains (name)');
     await db.execute(
-      'CREATE INDEX idx_stops_train ON train_stops (train_number, seq)',
+      'CREATE INDEX IF NOT EXISTS idx_stations_name ON stations (name)',
     );
     await db.execute(
-      'CREATE INDEX idx_stops_station ON train_stops (station_code)',
+      'CREATE INDEX IF NOT EXISTS idx_stations_local ON stations (name_local)',
     );
-
-    await _createFts(db);
-    await _seed(db);
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_trains_name ON trains (name)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_stops_train ON train_stops (train_number, seq)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_stops_station ON train_stops (station_code)',
+    );
   }
 
   /// Attempts to create FTS5 mirrors. Older Android SQLite builds without
@@ -151,10 +203,10 @@ class AppDatabase {
   }
 
   Future<void> _seed(Database db) async {
-    final stationsCsv = await rootBundle.loadString('assets/data/stations.csv');
-    final trainsCsv = await rootBundle.loadString('assets/data/trains.csv');
-    final stopsCsv = await rootBundle.loadString('assets/data/train_stops.csv');
-    final towersCsv = await rootBundle.loadString('assets/data/cell_towers.csv');
+    final stationsCsv = await assetLoader('assets/data/stations.csv');
+    final trainsCsv = await assetLoader('assets/data/trains.csv');
+    final stopsCsv = await assetLoader('assets/data/train_stops.csv');
+    final towersCsv = await assetLoader('assets/data/cell_towers.csv');
 
     final batch = db.batch();
 
@@ -214,10 +266,12 @@ class AppDatabase {
   }
 
   Future<void> _refreshCounts(Database db) async {
-    final stations =
-        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM stations'));
-    final trains =
-        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM trains'));
+    final stations = Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM stations'),
+    );
+    final trains = Sqflite.firstIntValue(
+      await db.rawQuery('SELECT COUNT(*) FROM trains'),
+    );
     _stationCount = stations ?? 0;
     _trainCount = trains ?? 0;
   }

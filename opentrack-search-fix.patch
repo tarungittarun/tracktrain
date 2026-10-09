@@ -1,0 +1,568 @@
+diff --git a/tracktrain/opentrack_india/lib/data/db/app_database.dart b/tracktrain/opentrack_india/lib/data/db/app_database.dart
+index bb15034..c0694ca 100644
+--- a/tracktrain/opentrack_india/lib/data/db/app_database.dart
++++ b/tracktrain/opentrack_india/lib/data/db/app_database.dart
+@@ -15,6 +15,10 @@ import '../../core/csv.dart';
+ /// Full-text search runs through SQLite FTS5 virtual tables mirrored with
+ /// triggers. Devices whose system SQLite lacks FTS5 fall back to indexed
+ /// LIKE queries transparently; repositories check [ftsAvailable].
++///
++/// Self-healing: if the first-launch seeding was ever interrupted (app
++/// force-stopped, install glitch, missing asset at that moment), the next
++/// open detects empty tables and rebuilds the whole database.
+ class AppDatabase {
+   AppDatabase._();
+ 
+@@ -26,6 +30,21 @@ class AppDatabase {
+   int _stationCount = 0;
+   int _trainCount = 0;
+ 
++  /// Asset reader; tests swap this for direct file access.
++  Future<String> Function(String assetPath) assetLoader = rootBundle.loadString;
++
++  /// Database file path override for tests; null uses the platform path.
++  String? debugPathOverride;
++
++  /// Drops the cached connection so the next [database] access re-opens the
++  /// file (used by tests to simulate an app relaunch).
++  void debugReset() {
++    _opening = null;
++    _ftsAvailable = false;
++    _stationCount = 0;
++    _trainCount = 0;
++  }
++
+   /// True when FTS5 virtual tables were created on this device.
+   bool get ftsAvailable => _ftsAvailable;
+ 
+@@ -38,21 +57,51 @@ class AppDatabase {
+   Future<void> ensureReady() => database;
+ 
+   Future<Database> _open() async {
+-    final dir = await getDatabasesPath();
+-    final path = p.join(dir, _fileName);
++    final path = debugPathOverride ??
++        p.join(await getDatabasesPath(), _fileName);
+     final db = await openDatabase(
+       path,
+       version: 1,
+       onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
+       onCreate: _onCreate,
+     );
++    await _repairIfEmpty(db);
+     await _refreshCounts(db);
+     return db;
+   }
+ 
+   Future<void> _onCreate(Database db, int version) async {
++    await _createSchema(db);
++    await _createFts(db);
++    await _seed(db);
++  }
++
++  /// If a previous seeding was interrupted the tables exist but are empty;
++  /// drop everything and build again so search never faces a hollow DB.
++  Future<void> _repairIfEmpty(Database db) async {
++    final count = Sqflite.firstIntValue(
++      await db.rawQuery('SELECT COUNT(*) AS c FROM stations'),
++    );
++    if ((count ?? 0) > 0) return;
++
++    await db.execute('DROP TABLE IF EXISTS stations_fts');
++    await db.execute('DROP TABLE IF EXISTS trains_fts');
++    await db.execute('DROP TRIGGER IF EXISTS stations_fts_ai');
++    await db.execute('DROP TRIGGER IF EXISTS trains_fts_ai');
++    await db.execute('DROP TABLE IF EXISTS train_stops');
++    await db.execute('DROP TABLE IF EXISTS cell_towers');
++    await db.execute('DROP TABLE IF EXISTS trains');
++    await db.execute('DROP TABLE IF EXISTS stations');
++
++    _ftsAvailable = false;
++    await _createSchema(db);
++    await _createFts(db);
++    await _seed(db);
++  }
++
++  Future<void> _createSchema(Database db) async {
+     await db.execute('''
+-      CREATE TABLE stations (
++      CREATE TABLE IF NOT EXISTS stations (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         code TEXT NOT NULL UNIQUE,
+         name TEXT NOT NULL,
+@@ -64,7 +113,7 @@ class AppDatabase {
+       )
+     ''');
+     await db.execute('''
+-      CREATE TABLE trains (
++      CREATE TABLE IF NOT EXISTS trains (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         number TEXT NOT NULL UNIQUE,
+         name TEXT NOT NULL,
+@@ -75,7 +124,7 @@ class AppDatabase {
+       )
+     ''');
+     await db.execute('''
+-      CREATE TABLE train_stops (
++      CREATE TABLE IF NOT EXISTS train_stops (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         train_number TEXT NOT NULL,
+         seq INTEGER NOT NULL,
+@@ -87,7 +136,7 @@ class AppDatabase {
+       )
+     ''');
+     await db.execute('''
+-      CREATE TABLE cell_towers (
++      CREATE TABLE IF NOT EXISTS cell_towers (
+         id INTEGER PRIMARY KEY AUTOINCREMENT,
+         mcc INTEGER NOT NULL,
+         mnc INTEGER NOT NULL,
+@@ -101,18 +150,21 @@ class AppDatabase {
+       )
+     ''');
+ 
+-    await db.execute('CREATE INDEX idx_stations_name ON stations (name)');
+-    await db.execute('CREATE INDEX idx_stations_local ON stations (name_local)');
+-    await db.execute('CREATE INDEX idx_trains_name ON trains (name)');
+     await db.execute(
+-      'CREATE INDEX idx_stops_train ON train_stops (train_number, seq)',
++      'CREATE INDEX IF NOT EXISTS idx_stations_name ON stations (name)',
+     );
+     await db.execute(
+-      'CREATE INDEX idx_stops_station ON train_stops (station_code)',
++      'CREATE INDEX IF NOT EXISTS idx_stations_local ON stations (name_local)',
++    );
++    await db.execute(
++      'CREATE INDEX IF NOT EXISTS idx_trains_name ON trains (name)',
++    );
++    await db.execute(
++      'CREATE INDEX IF NOT EXISTS idx_stops_train ON train_stops (train_number, seq)',
++    );
++    await db.execute(
++      'CREATE INDEX IF NOT EXISTS idx_stops_station ON train_stops (station_code)',
+     );
+-
+-    await _createFts(db);
+-    await _seed(db);
+   }
+ 
+   /// Attempts to create FTS5 mirrors. Older Android SQLite builds without
+@@ -151,10 +203,10 @@ class AppDatabase {
+   }
+ 
+   Future<void> _seed(Database db) async {
+-    final stationsCsv = await rootBundle.loadString('assets/data/stations.csv');
+-    final trainsCsv = await rootBundle.loadString('assets/data/trains.csv');
+-    final stopsCsv = await rootBundle.loadString('assets/data/train_stops.csv');
+-    final towersCsv = await rootBundle.loadString('assets/data/cell_towers.csv');
++    final stationsCsv = await assetLoader('assets/data/stations.csv');
++    final trainsCsv = await assetLoader('assets/data/trains.csv');
++    final stopsCsv = await assetLoader('assets/data/train_stops.csv');
++    final towersCsv = await assetLoader('assets/data/cell_towers.csv');
+ 
+     final batch = db.batch();
+ 
+@@ -214,10 +266,12 @@ class AppDatabase {
+   }
+ 
+   Future<void> _refreshCounts(Database db) async {
+-    final stations =
+-        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM stations'));
+-    final trains =
+-        Sqflite.firstIntValue(await db.rawQuery('SELECT COUNT(*) FROM trains'));
++    final stations = Sqflite.firstIntValue(
++      await db.rawQuery('SELECT COUNT(*) FROM stations'),
++    );
++    final trains = Sqflite.firstIntValue(
++      await db.rawQuery('SELECT COUNT(*) FROM trains'),
++    );
+     _stationCount = stations ?? 0;
+     _trainCount = trains ?? 0;
+   }
+diff --git a/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart b/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
+index 72765e3..24d0fd3 100644
+--- a/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
++++ b/tracktrain/opentrack_india/lib/data/repositories/station_repository.dart
+@@ -1,13 +1,23 @@
++import 'package:sqflite/sqflite.dart';
++
+ import '../../core/fuzzy_match.dart';
+ import '../db/app_database.dart';
+ import '../models/station.dart';
+ 
+-/// Typo-tolerant station search backed by SQLite FTS5 prefix matching with a
+-/// Dart-side Levenshtein re-rank, plus indexed LIKE fallback. Vernacular
+-/// names are searchable because `name_local` is part of the FTS index.
++/// Typo-tolerant station search:
++///  1. SQLite FTS5 prefix matching (fast path, includes `name_local` so
++///     vernacular scripts are searchable)
++///  2. Indexed LIKE substring matching
++///  3. Full-dataset Levenshtein scan — the typo net that catches queries
++///     like "bopal" → Bhopal which neither FTS nor LIKE can see.
+ class StationRepository {
+   const StationRepository();
+ 
++  /// Cached station list for the fuzzy scan (rebuilt automatically after a
++  /// database self-heal thanks to the count check).
++  static List<Station>? _fuzzyCache;
++  static int _fuzzyCacheCount = -1;
++
+   Future<List<Station>> search(String query, {int limit = 15}) async {
+     final db = await AppDatabase.instance.database;
+     final q = query.trim();
+@@ -26,11 +36,36 @@ class StationRepository {
+       candidates[station.id] = station;
+     }
+ 
++    // Typo net: when the fast paths barely matched, score every station.
++    if (candidates.length < 3 && q.length >= 3) {
++      for (final station in await _fuzzyScan(db, q, limit)) {
++        candidates[station.id] = station;
++      }
++    }
++
+     final ranked = candidates.values.toList()
+       ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
+     return ranked.take(limit).toList(growable: false);
+   }
+ 
++  Future<List<Station>> _fuzzyScan(Database db, String query, int limit) async {
++    final stationTotal = AppDatabase.instance.stationCount;
++    if (_fuzzyCache == null || _fuzzyCacheCount != stationTotal) {
++      _fuzzyCache = (await db.query('stations'))
++          .map(Station.fromRow)
++          .toList(growable: false);
++      _fuzzyCacheCount = stationTotal;
++    }
++
++    final scored = <(double, Station)>[];
++    for (final station in _fuzzyCache!) {
++      final score = _score(query, station);
++      if (score >= 0.55) scored.add((score, station));
++    }
++    scored.sort((a, b) => b.$1.compareTo(a.$1));
++    return scored.take(limit).map((e) => e.$2).toList(growable: false);
++  }
++
+   Future<Station?> getByCode(String code) async {
+     final db = await AppDatabase.instance.database;
+     final rows = await db.query(
+@@ -65,12 +100,12 @@ class StationRepository {
+     return _popularStations(db, limit);
+   }
+ 
+-  Future<List<Station>> _popularStations(dynamic db, int limit) async {
++  Future<List<Station>> _popularStations(Database db, int limit) async {
+     final rows = await db.query('stations', orderBy: 'id', limit: limit);
+     return rows.map(Station.fromRow).toList(growable: false);
+   }
+ 
+-  Future<List<Station>> _ftsSearch(dynamic db, String query, int limit) async {
++  Future<List<Station>> _ftsSearch(Database db, String query, int limit) async {
+     final match = _buildFtsMatch(query);
+     if (match.isEmpty) return const [];
+     try {
+@@ -89,7 +124,7 @@ class StationRepository {
+     }
+   }
+ 
+-  Future<List<Station>> _likeSearch(dynamic db, String query, int limit) async {
++  Future<List<Station>> _likeSearch(Database db, String query, int limit) async {
+     final like = '%$query%';
+     final rows = await db.query(
+       'stations',
+diff --git a/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart b/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
+index f3334bb..0c1b6d2 100644
+--- a/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
++++ b/tracktrain/opentrack_india/lib/data/repositories/train_repository.dart
+@@ -1,13 +1,18 @@
++import 'package:sqflite/sqflite.dart';
++
+ import '../../core/fuzzy_match.dart';
+ import '../db/app_database.dart';
+ import '../models/train.dart';
+ import '../models/train_stop.dart';
+ 
+ /// Train search and schedule access with the same typo-tolerant pipeline as
+-/// [StationRepository].
++/// [StationRepository], including the full-dataset Levenshtein typo net.
+ class TrainRepository {
+   const TrainRepository();
+ 
++  static List<Train>? _fuzzyCache;
++  static int _fuzzyCacheCount = -1;
++
+   Future<List<Train>> search(String query, {int limit = 15}) async {
+     final db = await AppDatabase.instance.database;
+     final q = query.trim();
+@@ -38,11 +43,36 @@ class TrainRepository {
+       candidates[train.id] = train;
+     }
+ 
++    // Typo net for misspelled train names ("rajdhni" → Rajdhani).
++    if (candidates.isEmpty && q.length >= 3) {
++      for (final train in await _fuzzyScan(db, q, limit)) {
++        candidates[train.id] = train;
++      }
++    }
++
+     final ranked = candidates.values.toList()
+       ..sort((a, b) => _score(q, b).compareTo(_score(q, a)));
+     return ranked.take(limit).toList(growable: false);
+   }
+ 
++  Future<List<Train>> _fuzzyScan(Database db, String query, int limit) async {
++    final trainTotal = AppDatabase.instance.trainCount;
++    if (_fuzzyCache == null || _fuzzyCacheCount != trainTotal) {
++      _fuzzyCache = (await db.query('trains'))
++          .map(Train.fromRow)
++          .toList(growable: false);
++      _fuzzyCacheCount = trainTotal;
++    }
++
++    final scored = <(double, Train)>[];
++    for (final train in _fuzzyCache!) {
++      final score = _score(query, train);
++      if (score >= 0.55) scored.add((score, train));
++    }
++    scored.sort((a, b) => b.$1.compareTo(a.$1));
++    return scored.take(limit).map((e) => e.$2).toList(growable: false);
++  }
++
+   Future<Train?> getByNumber(String number) async {
+     final db = await AppDatabase.instance.database;
+     final rows = await db.query(
+@@ -81,7 +111,7 @@ class TrainRepository {
+     return rows.map(Train.fromRow).toList(growable: false);
+   }
+ 
+-  Future<List<Train>> _ftsSearch(dynamic db, String query, int limit) async {
++  Future<List<Train>> _ftsSearch(Database db, String query, int limit) async {
+     final tokens = query
+         .split(RegExp(r'\s+'))
+         .where((t) => t.isNotEmpty)
+@@ -103,7 +133,7 @@ class TrainRepository {
+     }
+   }
+ 
+-  Future<List<Train>> _likeSearch(dynamic db, String query, int limit) async {
++  Future<List<Train>> _likeSearch(Database db, String query, int limit) async {
+     final rows = await db.query(
+       'trains',
+       where: 'name LIKE ? OR number LIKE ?',
+diff --git a/tracktrain/opentrack_india/pubspec.lock b/tracktrain/opentrack_india/pubspec.lock
+index 43709ff..3867941 100644
+--- a/tracktrain/opentrack_india/pubspec.lock
++++ b/tracktrain/opentrack_india/pubspec.lock
+@@ -105,6 +105,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "2.2.0"
++  file:
++    dependency: transitive
++    description:
++      name: file
++      sha256: a3b4f84adafef897088c160faf7dfffb7696046cb13ae90b508c2cbc95d3b8d4
++      url: "https://pub.dev"
++    source: hosted
++    version: "7.0.1"
+   fixnum:
+     dependency: transitive
+     description:
+@@ -221,6 +229,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "0.2.5"
++  glob:
++    dependency: transitive
++    description:
++      name: glob
++      sha256: "218aeb56050c714f62a3182775320dfa04602b55074873e24e31bbd39bda96fb"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.2.0"
+   hive:
+     dependency: "direct main"
+     description:
+@@ -357,6 +373,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "1.19.0"
++  native_toolchain_c:
++    dependency: transitive
++    description:
++      name: native_toolchain_c
++      sha256: "90eaad8059ebc2004a63810a4696ea9acdb02473e47ed3b6b3bafb100ac77e31"
++      url: "https://pub.dev"
++    source: hosted
++    version: "0.19.5"
+   nm:
+     dependency: transitive
+     description:
+@@ -509,6 +533,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "2.1.8"
++  process:
++    dependency: transitive
++    description:
++      name: process
++      sha256: "4242ba3508d37e01808bdf71ad1d5bb93a8d671bf2e7450e6b1b353fb0808891"
++      url: "https://pub.dev"
++    source: hosted
++    version: "5.0.6"
+   pub_semver:
+     dependency: transitive
+     description:
+@@ -570,6 +602,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "2.5.13+1"
++  sqflite_common_ffi:
++    dependency: "direct dev"
++    description:
++      name: sqflite_common_ffi
++      sha256: "4ec920a01788641fa1c9922e757c108427e7f8634cce3ce8a1073d573060f4a3"
++      url: "https://pub.dev"
++    source: hosted
++    version: "2.4.3"
+   sqflite_darwin:
+     dependency: transitive
+     description:
+@@ -586,6 +626,14 @@ packages:
+       url: "https://pub.dev"
+     source: hosted
+     version: "2.4.2"
++  sqlite3:
++    dependency: transitive
++    description:
++      name: sqlite3
++      sha256: cc62d72dbf16bb1f6ae8954b238016de1473e53df060ed0c332eed0a41dd1848
++      url: "https://pub.dev"
++    source: hosted
++    version: "3.7.0"
+   stack_trace:
+     dependency: transitive
+     description:
+diff --git a/tracktrain/opentrack_india/pubspec.yaml b/tracktrain/opentrack_india/pubspec.yaml
+index 2aea47f..9188ff2 100644
+--- a/tracktrain/opentrack_india/pubspec.yaml
++++ b/tracktrain/opentrack_india/pubspec.yaml
+@@ -45,6 +45,7 @@ dev_dependencies:
+   flutter_test:
+     sdk: flutter
+   flutter_lints: ^4.0.0
++  sqflite_common_ffi: ^2.3.3
+ 
+ flutter:
+   generate: true
+diff --git a/tracktrain/opentrack_india/test/database_integration_test.dart b/tracktrain/opentrack_india/test/database_integration_test.dart
+new file mode 100644
+index 0000000..7a5e7ee
+--- /dev/null
++++ b/tracktrain/opentrack_india/test/database_integration_test.dart
+@@ -0,0 +1,104 @@
++import 'dart:io';
++
++import 'package:flutter_test/flutter_test.dart';
++import 'package:opentrack_india/data/db/app_database.dart';
++import 'package:opentrack_india/data/repositories/station_repository.dart';
++import 'package:opentrack_india/data/repositories/train_repository.dart';
++import 'package:sqflite_common_ffi/sqflite_ffi.dart';
++
++/// Reads the real bundled CSVs from disk instead of rootBundle so the exact
++/// on-device pipeline (schema → FTS5 → seed → search) can be verified in CI.
++Future<String> _fileAssetLoader(String path) => File(path).readAsString();
++
++void main() {
++  const stations = StationRepository();
++  const trains = TrainRepository();
++
++  setUpAll(() {
++    sqfliteFfiInit();
++    databaseFactory = databaseFactoryFfi;
++    AppDatabase.instance.debugPathOverride =
++        '${Directory.systemTemp.path}/opentrack_test_'
++        '${DateTime.now().microsecondsSinceEpoch}.db';
++    AppDatabase.instance.assetLoader = _fileAssetLoader;
++  });
++
++  tearDownAll(() async {
++    final path = AppDatabase.instance.debugPathOverride;
++    await databaseFactory.deleteDatabase(path!);
++  });
++
++  test('database seeds the bundled dataset with FTS5 enabled', () async {
++    final db = await AppDatabase.instance.database;
++    expect(db, isNotNull);
++    expect(AppDatabase.instance.stationCount, 43);
++    expect(AppDatabase.instance.trainCount, 8);
++    expect(AppDatabase.instance.ftsAvailable, isTrue);
++  });
++
++  test('empty query returns popular stations (picker initial state)',
++      () async {
++    final results = await stations.search('');
++    expect(results, isNotEmpty);
++  });
++
++  test('station search: exact and typo queries', () async {
++    final exact = await stations.search('chennai');
++    expect(exact.map((s) => s.code), contains('MAS'));
++
++    final typo = await stations.search('bopal');
++    expect(typo.map((s) => s.code), contains('BPL'));
++
++    final byCode = await stations.search('ndls');
++    expect(byCode.map((s) => s.code), contains('NDLS'));
++  });
++
++  test('station search works with vernacular (Devanagari) input', () async {
++    final results = await stations.search('नई दिल्ली');
++    expect(results, isNotEmpty);
++    expect(results.first.code, 'NDLS');
++  });
++
++  test('train search: typo, number and name queries', () async {
++    final typo = await trains.search('rajdhni');
++    expect(typo.map((t) => t.number), contains('12951'));
++
++    final byNumber = await trains.search('12951');
++    expect(byNumber, isNotEmpty);
++    expect(byNumber.first.number, '12951');
++
++    final byName = await trains.search('tamil nadu');
++    expect(byName.map((t) => t.number), contains('12621'));
++  });
++
++  test('train schedule returns ordered stops with station names', () async {
++    final schedule = await trains.getSchedule('12951');
++    expect(schedule.length, 5);
++    expect(schedule.first.stationCode, 'MMCT');
++    expect(schedule.last.stationCode, 'NDLS');
++    expect(schedule.last.stationName, 'New Delhi');
++    expect(schedule.first.isOrigin, isTrue);
++  });
++
++  test('trains halting at a station are listed', () async {
++    final halting = await trains.trainsStoppingAt('BPL');
++    expect(halting.map((t) => t.number), containsAll(['12621', '12001']));
++  });
++
++  test('self-healing rebuilds an emptied database on relaunch', () async {
++    final db = await AppDatabase.instance.database;
++    await db.execute('DELETE FROM stations');
++    await db.execute('DELETE FROM stations_fts');
++    await db.execute('DELETE FROM trains');
++    await db.close();
++
++    // Simulate the next app launch opening the same hollow file.
++    AppDatabase.instance.debugReset();
++    await AppDatabase.instance.database;
++    expect(AppDatabase.instance.stationCount, 43);
++    expect(AppDatabase.instance.trainCount, 8);
++
++    final healed = await stations.search('chennai');
++    expect(healed.map((s) => s.code), contains('MAS'));
++  });
++}
