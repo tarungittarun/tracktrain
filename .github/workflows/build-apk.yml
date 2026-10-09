@@ -1,0 +1,109 @@
+name: Build OpenTrack APK
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  build-apk:
+    name: Build release APK (R8 minified)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # IMPORTANT: the Flutter project lives in this subfolder of the repo
+    defaults:
+      run:
+        working-directory: tracktrain/opentrack_india
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Show toolchain versions
+        run: |
+          flutter --version
+          java -version
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('tracktrain/opentrack_india/android/**/*.gradle*', 'tracktrain/opentrack_india/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Install Dart dependencies
+        run: flutter pub get
+
+      - name: Generate localizations (8 languages)
+        run: flutter gen-l10n
+
+      - name: Static analysis
+        run: flutter analyze
+
+      - name: Run unit tests
+        run: flutter test --no-pub
+
+      - name: Build release APKs (R8 minified, split per ABI)
+        run: flutter build apk --release --split-per-abi
+
+      - name: Stage artifacts
+        run: |
+          mkdir -p dist
+          VERSION=$(awk '/^version:/ {print $2}' pubspec.yaml | tr -d "'\"")
+          cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
+            "dist/OpenTrackIndia-v${VERSION}-arm64-v8a.apk"
+          cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
+            "dist/OpenTrackIndia-v${VERSION}-armeabi-v7a.apk"
+          cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
+            "dist/OpenTrackIndia-v${VERSION}-x86_64.apk"
+          ls -lh dist/
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opentrack-release-apks
+          path: tracktrain/opentrack_india/dist/*.apk
+          retention-days: 30
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub Release
+    needs: build-apk
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: opentrack-release-apks
+          path: dist
+
+      - name: Create release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
